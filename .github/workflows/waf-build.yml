@@ -1,0 +1,121 @@
+name: Build and Deploy OAuth WAF
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'docker/oauth_waf/**'
+  workflow_dispatch:
+    inputs:
+      clear_cache:
+        description: 'Clear Docker build cache'
+        required: false
+        default: false
+        type: boolean
+      force_build:
+        description: 'Force build even without changes'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  DOCKER_REGISTRY: registry.mapas.world:5000
+
+jobs:
+  # ====================================
+  # BUILD OAUTH WAF
+  # ====================================
+  build-oauth-waf:
+    name: 🏗️ Build OAuth WAF
+    runs-on: self-hosted
+    
+    # Build on push to docker/oauth_waf/** or manual dispatch
+    if: |
+      github.event_name == 'push' || 
+      github.event_name == 'workflow_dispatch'
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Generate version tag
+        id: version
+        run: |
+          DATE=$(date +%Y%m%d)
+          COMMIT_HASH=$(git rev-parse --short HEAD)
+          VERSION="$DATE.$COMMIT_HASH"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Building OAuth WAF version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
+          password: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+
+      - name: 🔍 List docker/oauth_waf directory
+        run: |
+          echo "📂 Contents of docker/oauth_waf:"
+          ls -lh docker/oauth_waf/
+
+      - name: 🚀 Build and push OAuth WAF
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/oauth_waf/Dockerfile
+          platforms: linux/arm64
+          push: true
+          pull: true
+          tags: |
+            ${{ env.DOCKER_REGISTRY }}/oauth_waf:${{ env.VERSION }}
+            ${{ env.DOCKER_REGISTRY }}/oauth_waf:latest
+          cache-from: ${{ github.event.inputs.clear_cache == 'true' && '' || format('type=registry,ref={0}/oauth_waf:latest', env.DOCKER_REGISTRY) }}
+          cache-to: type=inline
+          no-cache: ${{ github.event.inputs.clear_cache == 'true' }}
+
+      - name: ✅ Build complete
+        run: |
+          echo "✅ OAuth WAF image built and pushed successfully"
+          echo "📦 Image: ${{ env.DOCKER_REGISTRY }}/oauth_waf:${{ env.VERSION }}"
+          echo "📦 Latest: ${{ env.DOCKER_REGISTRY }}/oauth_waf:latest"
+          echo "🏗️ Platform: linux/arm64"
+
+  # ====================================
+  # SUMMARY
+  # ====================================
+  build-summary:
+    name: 📋 Build Summary
+    runs-on: self-hosted
+    needs: [build-oauth-waf]
+    if: always()
+    
+    steps:
+      - name: 📊 Display build results
+        run: |
+          echo "🎯 OAuth WAF Build Summary"
+          echo "========================="
+          echo ""
+          echo "🏗️  Build Status: ${{ needs.build-oauth-waf.result }}"
+          echo "📦 Version: ${{ needs.build-oauth-waf.outputs.version }}"
+          echo "📦 Registry: ${{ env.DOCKER_REGISTRY }}"
+          echo "🏷️  Tags: oauth_waf:${{ needs.build-oauth-waf.outputs.version }}, oauth_waf:latest"
+          echo "🏗️  Platform: linux/arm64"
+          echo ""
+          if [ "${{ needs.build-oauth-waf.result }}" = "success" ]; then
+            echo "✅ Build completed successfully!"
+          else
+            echo "❌ Build failed"
+            exit 1
+          fi
