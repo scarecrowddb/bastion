@@ -1,0 +1,62 @@
+##################################
+#      Setup Git Config          #
+##################################
+
+- name: Run Create Git Username
+  command: git config --global user.name "David de Bruyn"
+  
+- name: Run Create Git Email
+  command: git config --global user.email david.debruyn@origin.com.au
+  
+- name: Set Git username
+  ansible.builtin.command:
+    cmd: git config --global user.name "{{ ansible_git_username }}"
+  
+- name: Set Git credentials helper to store
+  ansible.builtin.command:
+    cmd: git config --global credential.helper store
+  
+# - name: Create the Git credentials file
+#   ansible.builtin.copy:
+#     dest: "{{ ansible_env.HOME }}/.git-credentials"
+#     content: "https://{{ ansible_git_username }}:{{ scarecrow_git_pat }}@gitlab.octoengine.com"
+#     mode: '0600'
+
+
+##################################
+#    Setup Security Packages     #
+##################################
+
+- name: stop firewalld
+  systemd:
+    name: firewalld
+    state: stopped
+    enabled: no
+  ignore_errors: true
+
+##################################
+#      Setup SSH Server          #
+##################################
+- name: Modify SSH Server no Password
+  replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication.*$'
+    replace: 'PasswordAuthentication yes'
+  notify:
+    - restart sshd
+
+- name: Ensure add ssh-rsa  
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    line: 'PubkeyAcceptedKeyTypes=+ssh-rsa'
+    create: yes
+
+# -- Configure SSH root with
+- name: Modify SSH Server no Password
+  replace:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin.*$'
+    replace: 'PermitRootLogin no'
+  notify:
+    - restart sshd
+

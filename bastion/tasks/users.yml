@@ -1,0 +1,64 @@
+##################################
+#      Setup User Details        #
+##################################
+- name: Update Root user's Password (encrypted version of root_password)
+  user:
+    name: root
+    update_password: always
+    password: "{{ root_password }}"
+
+# -- Make sure that the Sudo's Group Exists
+- name: Ensure group "sudo-no-passwd" exists
+  group:
+    name: sudo-no-passwd
+    state: present
+
+- name: Make sure the sudo file exists
+  copy:
+    dest: /etc/sudoers.d/10_sudo-no-passwd
+    content: |
+      %sudo-no-passwd ALL=(ALL) NOPASSWD: ALL
+
+# -- Add ddebruyn user
+- name: Add ddebruyn as a new user
+  user:
+    name: ddebruyn
+    shell: /bin/bash
+    groups: sudo-no-passwd
+    append: yes
+  ignore_errors: true
+
+# -- Add ddebruyn user
+- name: Add ddebruyn as a new user
+  user:
+    name: ddebruyn
+    shell: /bin/bash
+    password: '{{ ddebruyn_password }}'
+    groups: sudo-no-passwd
+    append: yes
+
+# -- Configure ddebruyn public key
+- name: Ensure ssh key for ddebruyn
+  lineinfile:
+    path: /home/ddebruyn/.ssh/authorized_keys
+    line: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCi4iidx59FHJmbcxCVS73KV0O59m9pD8rdkwaZCXUOrkHafo5a9+fq8CGULLsslWDReK2sIE5SK0eoTUGbfAsQzmNG5mDDfFplZ3M4m1uS5I7AEBXsCLcpTvpab/V0yMF0wr1EmMAE0TL0CuujoCeLpepR3BbiYUjUYQ6JSv6mwvfQpwXz5557By2fCEEpfeg3fNieOHb+SgoPUcCWmg/1aETWKJjO6PkbJTH6OGAnIjI4KVrfHyt6tZijT/NXMl83yuvdWgkVvhR11pPGrtAFdHXQvqw8NLU+jTuwwuXMnQvlVPV0zOkOwSNASC8PRzcH1XKEMV9DIX7zUzAF/yeXqPGazEKhr4KX124EI3qUquUcLMOtNKeqi5ogsiLwnmnHM7ZH/wnhnWp/VuoWG1QnBvxxZvKtbRRhnHCFPN+5I65xRg4fARMlN5glgjiNSvQOuv28AUXb+ow3bsjxmvrUsXBko5OdKbSY+YaLfrQ9VTFa0Mq42aRwFZ8fHCUj+NObE/jrI35xFYpJ1uWrgklktMjic5TQOrcrdM65scQg9VSzrUv5mFoG/GQVgS1hTSUSyO/c5b1Y6wMN6SeaqXiXmSG3ukplC1ELshSjlRm48y0snrlUjmM73jjLyaCoJri2vNOFDbx6Fx399RsyKfC1Uo7YJZP56r9OfQKJ5VhIeQ== ddebruyn@Davids-MacBook'
+    create: yes
+
+- name: Ensure ssh key for ddebruyn
+  lineinfile:
+    path: /home/ddebruyn/.ssh/authorized_keys
+    line: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDmtqll61QQ/rn7UX/eZo9A2Oj6rVXjt+kuV3yA4Bt7dPGuy9lNYsDGbUnzj0DBizC6EnUfts0ZRUFwAKgwOzJiGbRisVGmAOC/DeFZPWO2L/BsiKorPvvz5BB1Y9esLOXJR0YqPRhIwZ4gUbAinAySgeZSG3nyXoodIYbhq9JQWrIQNgu7nBm+O0kWB6yG5S/1B2yjBNkUH17tGC/sTgw8GGY6bCVGzEsoIL9wadABVc9lZ1lxFQTmlv+2mD9AF7+bgXDbHpakBTTXfE4ieeKZxM741C0WvZ76qhD5BH1q64YX/oM9dzPuE/QU2Yvxz1ER7tRfsdeWKGP4EluWFAaLlliQGutHN6civ8pJW56raL+pkPsXIWcdS+c5mlmiQwlD0vV85uzMzVxtkBjlL5NuSECPE8EqxX+8Q+dieL+J9Y1KxUs8JJCFvfwDCBbkPUVMPO0TtmPeXN3VZuPlWHWgXq05c8a5Cxgliku8BEcSviTohn2gCRIzk2JhTnc37fl0CiAMIfEKvqrq61t/+OHIdXNQykC0z9uCL1ho5vnspMdExHvGsZgFKg1/iRWs6LbuumoIw3XEccuPW3Yivr70kP7udFtAHDGSLXN9NZnP6O6ZpWMNPUgJ3vBqkczq6hiv4OSpAA1XjO7W7UxG+fmQ5P2K4zggKDaasPj4A5fpCQ== scarecrowddb@penguin'
+    create: yes
+
+- name: Ensure ssh key for ddebruyn
+  lineinfile:
+    path: /home/ddebruyn/.ssh/authorized_keys
+    line: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDQ3ClfvUZg92QtX/0BMat87CBTqUwRbRcuBIGwWiJu/UxDOhePjuM7RW9zPEbCAhDj0yL1ORca2eRDgUxkNLWmTwQswyjgRPe1uvk9dNciYxbfSb1MSIFJmBLMZfKrD50RRTE/MCGcBOWcdytLznk21xYecRxftMwUVHyj1o58yfrbBR02ui1eDyDl333SEZnyOIvO42heAx/yYZkZXTDQrtrH8DGLV7LbEA8NxodU8dcbLzt/SBrPAKBKiJWniVyIE5J+sz2pil+ClgH7xwGTL5X52DLylMifn+oAWU0Xb7sOCsYz/XtQO7cywiRXuxZf5YSDnSBMSGT1nKikflbdU4XmnZ/9IfWV4iDDrEXK7tFyEdqhXU/JJguw7Cb4GN6tEpmuJm3hqFYNJZzFw3N9z9gLIKrqRX9h6zYLOEgsA6aNbiGM890+u4ZDEIYDORJBT/sg+SLriBuR3bTjJRAZnsykPe2/1v6VdgwxtpPpV0cWkyPdI1u0tenvOJ9VRBl149gT8hnO4JS7QPfY4RtPNEdzTDRXZSX5/lhJ1XBoDisT5vZWm/FJQI88uwE7tt9MKBn387ohmXWbrHEPZ/SOHAcW7frDELTTfXPiIXGCutSbpYY9cxoKm30P+XSrfQHWYKwKkphQxMKRfYDtT/PXPr9+ITpDqxQoeykZuaCn6Q== IDRSA2 Key for ddebruyn'
+    create: yes
+
+- name: Modify RSA File Permissions for dev.ddebruyn
+  file:
+    path: /home/ddebruyn/.ssh/authorized_keys
+    owner: ddebruyn
+    group: ddebruyn
+    mode: '0600'

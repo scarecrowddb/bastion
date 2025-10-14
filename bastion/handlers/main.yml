@@ -1,0 +1,22 @@
+# -- Restart SSH Service
+- name: restart sshd
+  systemd:
+    name: sshd
+    state: restarted
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: kill running nginx process
+  command: pkill nginx
+  listen: "restart_nginx"
+  
+- name: restart nginx
+  service:
+    name: nginx
+    state: started
+  listen: "restart_nginx"
+
+- name: reload_nginx
+  command: /usr/sbin/nginx -s reload

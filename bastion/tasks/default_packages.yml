@@ -1,0 +1,84 @@
+##################################
+#          Setup Ansible         #
+##################################
+- name: Ensure Autoclean in Upgrades
+  ansible.builtin.blockinfile:
+    dest: /etc/ansible/ansible.cfg
+    block: |
+      [default]
+      vault_password_file = /etc/ansible/password_file'
+    create: yes
+
+- name: Check if the file exists
+  stat:
+    path: /etc/ansible/password_file
+  register: file_status
+
+- name: Fail if the password file does not exist
+  fail:
+    msg: "The file /etc/ansible/password_file does not exist. You'll need to copy this from the other Ansible Server"
+  when: not file_status.stat.exists
+
+
+##################################
+# Base Installation of Packages  #
+##################################
+- name: Install Base Programs for Ubuntu Based Systems
+  apt: 
+    name: 
+      - cron
+      - unattended-upgrades
+      - ca-certificates 
+      - curl 
+      - gnupg 
+      - lsb-release
+      - unzip
+      - fail2ban
+      - libssl-dev
+      - nfs-common
+      - qemu-guest-agent
+      - python3-dev
+      - python3-pip
+      - unattended-upgrades
+      - nut-client
+      - git
+      - certbot
+      - python3-certbot-dns-digitalocean
+      - python3-certbot-nginx
+      - rsync
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - vlan
+      - iputils-tracepath
+      - dhcpcd
+      - geoipupdate
+      - libmaxminddb-dev
+      - build-essential
+      - libpcre3
+      - libpcre3-dev
+      - etherwake
+    state: present
+    update_cache: yes
+
+- name: Update the system
+  apt:
+    update_cache: yes
+    upgrade: dist
+
+##################################
+#          Setup Updates         #
+##################################
+- name: Permit Enabled Unattended Upgrades
+  ansible.builtin.service:
+    name: unattended-upgrades
+    state: started
+    enabled: yes
+
+- name: Ensure Autoclean in Upgrades
+  ansible.builtin.lineinfile:
+    path: /etc/apt/apt.conf.d/20auto-upgrades
+    line: 'APT::Periodic::AutocleanInterval "7";'
+    create: no

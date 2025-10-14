@@ -1,0 +1,6 @@
+- name: Reference collections contents using their FQCNs
+  hosts: localhost
+  roles:
+    - role: bastion
+  
+  

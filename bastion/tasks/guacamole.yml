@@ -1,0 +1,317 @@
+- name: Log into private registry and force re-authorization
+  docker_login:
+    registry: registry.mapas.world:5000
+    username: mapasregistry
+    password: "{{ docker_registry_passwd }}"
+    reauthorize: yes
+  
+- name: pull an image
+  docker_image:
+    name: registry.mapas.world:5000/oauth_waf:latest
+    source: pull
+
+- name: Create /docker/oauth-proxy/permitted_users.txt
+  copy:
+    content: |
+      scarecrow.ddb@gmail.com
+    dest: /docker/oauth-proxy/permitted_users.txt
+    mode: '0755'
+
+# # --- SETUP MAXMIND GEOIP DATABASE
+# - name: Add maxmind/ppa repository 
+#   shell: add-apt-repository ppa:maxmind/ppa -y
+
+# - name: Install Python 3, Git and Docker
+#   apt: 
+#     name:
+#       - geoipupdate 
+#       - libmaxminddb0 
+#       - libmaxminddb-dev 
+#       - mmdb-bin
+#       - geoip-database 
+#       - libgeoip1
+#     state: present
+#     update_cache: yes
+
+- name: Create /docker/oauth-proxy/permitted_users.txt
+  copy:
+    content: |
+      # Please see https://dev.maxmind.com/geoip/updating-databases?lang=en for
+      # instructions on setting up geoipupdate, including information on how to
+      # download a pre-filled GeoIP.conf file.
+
+      # Replace YOUR_ACCOUNT_ID_HERE and YOUR_LICENSE_KEY_HERE with an active account
+      # ID and license key combination associated with your MaxMind account. These
+      # are available from https://www.maxmind.com/en/my_license_key.
+      AccountID 684161
+      LicenseKey {{maxmind_db_key}}
+
+      # Enter the edition IDs of the databases you would like to update.
+      # Multiple edition IDs are separated by spaces.
+      EditionIDs GeoLite2-Country GeoLite2-City
+
+      # The remaining settings are OPTIONAL.
+
+      # The directory to store the database files. Defaults to /usr/share/GeoIP
+      # DatabaseDirectory /usr/share/GeoIP
+
+      # The server to use. Defaults to "updates.maxmind.com".
+      # Host updates.maxmind.com
+
+      # The proxy host name or IP address. You may optionally specify a
+      # port number, e.g., 127.0.0.1:8888. If no port number is specified, 1080
+      # will be used.
+      # Proxy 127.0.0.1:8888
+
+      # The user name and password to use with your proxy server.
+      # ProxyUserPassword username:password
+
+      # Whether to preserve modification times of files downloaded from the server.
+      # Defaults to "0".
+      # PreserveFileTimes 0
+
+      # The lock file to use. This ensures only one geoipupdate process can run at a
+      # time.
+      # Note: Once created, this lockfile is not removed from the filesystem.
+      # Defaults to ".geoipupdate.lock" under the DatabaseDirectory.
+      # LockFile /usr/share/GeoIP/.geoipupdate.lock
+
+      # The amount of time to retry for when errors during HTTP transactions are
+      # encountered. It can be specified as a (possibly fractional) decimal number
+      # followed by a unit suffix. Valid time units are "ns", "us" (or "µs"), "ms",
+      # "s", "m", "h".
+      # Defaults to "5m" (5 minutes).
+      # RetryFor 5m
+
+      # The number of parallel database downloads.
+      # Defaults to "1".
+      # Parallelism 1
+    dest: /etc/GeoIP.conf
+    mode: '0755'
+
+- name: Ensure databases are in place
+  ansible.builtin.stat:
+    path: /var/lib/GeoIP/GeoLite2-Country.mmdb
+  register: geoip_db_file
+
+- name: run geoipupdate if the database is not present
+  ansible.builtin.command: geoipupdate
+  when: geoip_db_file.stat.exists == False
+
+- name: Display message if the GeoIP database was successfully updated
+  ansible.builtin.debug:
+    msg: "GeoIP databases have been updated."
+  when: geoip_db_file.stat.exists
+
+- name: Cronjob to update geoipdb"
+  cron:
+    name: Update GEOIP
+    weekday: "2"
+    minute: "0"
+    hour: "12"
+    job: "/usr/bin/geoipupdate > /dev/null"
+
+- name: Create postgres data directory
+  file:
+    path: "{{item}}"
+    state: directory
+  loop:
+    - /opt/nginxmodules
+    - /opt/nginxmodules/nginx
+
+# --- SETUP NGINX AND GEOIP DATABASE
+- name: Get Nignx Version
+  shell: /usr/sbin/nginx -v
+  register: nginx_version
+
+- name: Get stats of a file
+  ansible.builtin.stat:
+    path: /opt/nginxmodules/nginx-{{nginx_version.stderr.split(' ').2.split('/').1}}.tar.gz
+  register: nginx_dl_exist
+
+- name: download nginx
+  get_url:
+    url: http://nginx.org/download/nginx-{{nginx_version.stderr.split(' ').2.split('/').1}}.tar.gz
+    dest: /opt/nginxmodules/nginx-{{nginx_version.stderr.split(' ').2.split('/').1}}.tar.gz
+  when: nginx_dl_exist.stat.exists == False
+
+- name: Extract nginx into /opt/nginxmodules/
+  ansible.builtin.unarchive:
+    src: /opt/nginxmodules/nginx-{{nginx_version.stderr.split(' ').2.split('/').1}}.tar.gz
+    dest: /opt/nginxmodules/nginx
+    remote_src: yes
+    creates: /opt/nginxmodules/nginx/nginx-{{nginx_version.stderr.split(' ').2.split('/').1}}
+
+- name: Download ngx_http_geoip2_module from GitHub
+  git:
+    repo: https://github.com/leev/ngx_http_geoip2_module.git
+    dest: /opt/nginxmodules/ngx_http_geoip2_module
+
+- name: Get Nignx Version
+  shell: ./configure --with-compat --add-dynamic-module=/opt/nginxmodules/ngx_http_geoip2_module
+  args:
+    chdir: /opt/nginxmodules/nginx/nginx-{{nginx_version.stderr.split(' ').2.split('/').1}}
+
+- name: Get Nignx Version
+  shell: make modules
+  args:
+    chdir: /opt/nginxmodules/nginx/nginx-{{nginx_version.stderr.split(' ').2.split('/').1}}
+
+- name: Copy a "sudoers" file on the remote machine for editing
+  ansible.builtin.copy:
+    src: /opt/nginxmodules/nginx/nginx-{{nginx_version.stderr.split(' ').2.split('/').1}}/objs/ngx_http_geoip2_module.so
+    dest: "{{ item }}"
+    remote_src: yes
+  loop:
+    - /usr/share/nginx/modules/
+    - /etc/nginx/modules/
+
+- debug:
+    msg: "{{nginx_version.stderr.split(' ').2.split('/').1}}"
+
+# Copy bastion.octoengine.com.conf to /docker/mapas-waf/nginx/sites/
+- name: Copy nginx
+  copy:
+    src: files/default.conf
+    dest: /etc/nginx/nginx.conf
+  notify: reload_nginx
+
+##################################
+#      Certificates              #
+##################################
+
+- name: Create postgres data directory
+  file:
+    path: "{{item}}"
+    state: directory
+  loop:
+    - /docker
+    - /docker/certs
+    - /docker/oauth-proxy
+
+- name: Create octoengine certificates from lets encrypt
+  shell: >
+        certbot --nginx
+        -n
+        --agree-tos
+        --email scarecrow.ddb@gmail.com
+        -d bastion.octoengine.com
+  args:
+    creates: /etc/letsencrypt/live/bastion.octoengine.com/
+
+- name: Cronjob to autorenew certificate"
+  cron:
+    name: renew certificates waf
+    weekday: "0"
+    minute: "0"
+    hour: "12"
+    job: "/usr/bin/certbot renew certonly --quiet --renew-hook 'systemctl reload nginx' > /dev/null"
+
+# Copy bastion.octoengine.com.conf to /docker/mapas-waf/nginx/sites/
+- name: Copy nginx
+  copy:
+    src: files/bastion.octoengine.com.conf
+    dest: /etc/nginx/conf.d/bastion.octoengine.com.conf
+  notify: reload_nginx
+
+# ensure NGINX is running and enabled
+- name: Ensure NGINX is running and enabled
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: yes
+
+##################################
+#      Launch Containers         #
+##################################
+
+- name: "Launch OAuth Proxy Server Container"
+  docker_container:
+    name: oauth2-proxy
+    hostname: oauth2-proxy
+    image: bitnami/oauth2-proxy:latest
+    command: "--whitelist-domain=*.octoengine.com --set-xauthrequest --authenticated-emails-file=/etc/permitted_oauth_users.txt --set-authorization-header --pass-user-headers --pass-access-token --pass-authorization-header --prefer-email-to-user --upstream=http://10.212.212.20:8080"
+    published_ports:
+      - 0.0.0.0:4180:4180
+      - 0.0.0.0:8000:8080
+    env:
+      OAUTH2_PROXY_COOKIE_SECRET: nVfX3WXfUPa6pVDV2K3E2QyzpjKZyq_wq-EfgU9l90U=
+      OAUTH2_PROXY_CLIENT_ID: "{{oauth2_proxy_client_id}}"
+      OAUTH2_PROXY_CLIENT_SECRET: "{{oauth2_proxy_client_secret}}"
+      OAUTH2_PROXY_PROVIDER: google
+      OAUTH2_PROXY_REDIRECT_URL: https://bastion.octoengine.com/oauth2/callback
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_COOKIE_DOMAINS: octoengine.com
+      OAUTH2_PROXY_SESSION_STORE_TYPE: cookie
+      OAUTH2_PROXY_COOKIE_SAMESITE: lax
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST: "true"
+      OAUTH2_PROXY_COOKIE_CSRF_EXPIRE: 5m
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "false"
+      OAUTH2_PROXY_LOG_LEVEL: debug
+    restart_policy: 'unless-stopped'
+    volumes:
+      - /docker/oauth-proxy/permitted_users.txt:/etc/permitted_oauth_users.txt
+
+- name: "Launch Oauth Server Container"
+  docker_container:
+    name: oauth_waf
+    hostname: oauth_waf
+    image: registry.mapas.world:5000/oauth_waf:latest
+    published_ports:
+      - 0.0.0.0:9000:80
+    restart_policy: 'unless-stopped'
+    volumes:
+      - /var/log/nginx:/var/log/modsecurity
+      - /var/log/nginx:/var/log/nginx
+
+- name: "Launch Guacamole MySQL Container"
+  docker_container:
+    name: guacamoledb
+    hostname: guacamoledb
+    image: mysql/mysql-server:latest
+    restart_policy: 'unless-stopped'
+    env:
+      MYSQL_ROOT_PASSWORD: "{{guacdb_root_password}}"
+      MYSQL_DATABASE: guacdb 
+    volumes:
+      - /docker/guacamole/mysql:/var/lib/mysql
+
+- name: "Launch Guacamole Server Daemon Container"
+  docker_container:
+    name: guacamole-server
+    hostname: guacamole-server
+    image: registry.mapas.world:5000/guacamole-server:latest
+    restart_policy: 'unless-stopped'
+    published_ports:
+      - 127.0.0.1:4822:4822
+
+- name: "Launch Guacamole Client Container"
+  docker_container:
+    name: guacamole-client
+    hostname: guacamole-client
+    image: registry.mapas.world:5000/guacamole-client:latest
+    env:
+      MYSQL_DATABASE: "guacdb"
+      MYSQL_PASSWORD: "{{guacdb_mysql_password}}"
+      MYSQL_USER: guacadmin
+    links:
+     - "guacamole-server:guacd"
+     - "guacamoledb:mysql"
+    published_ports:
+      - 0.0.0.0:8080:8080
+    restart_policy: 'unless-stopped'
+
+
+# - name: Get the container ID to run migrations or tasks against for demo
+#   shell: docker ps | grep mapas-waf | awk '{print $1}' | head -1
+#   register: docker_waf_container_id
+#   ignore_errors: true
+#   tags: ['mapas-waf']
+
+# - name: Set Fact Array for waf_container_id
+#   set_fact:
+#     waf_container_id: "{{ docker_waf_container_id.stdout }}"
+
+# - name: restart waf
+#   shell: docker restart mapas-waf

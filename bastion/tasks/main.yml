@@ -1,0 +1,396 @@
+##################################
+#      Debugging Functions       #
+##################################
+
+# - name: "Launch OAuth Proxy Server Container"
+#   docker_container:
+#     name: oauth2-proxy
+#     hostname: oauth2-proxy
+#     image: bitnami/oauth2-proxy:latest
+#     command: "--whitelist-domain=*.octoengine.com --set-xauthrequest --authenticated-emails-file=/etc/permitted_oauth_users.txt --set-authorization-header --pass-user-headers --pass-access-token --pass-authorization-header --prefer-email-to-user --upstream=http://10.212.212.20:8080"
+#     published_ports:
+#       - 0.0.0.0:4180:4180
+#       - 0.0.0.0:8000:8080
+#     env:
+#       OAUTH2_PROXY_COOKIE_SECRET: nVfX3WXfUPa6pVDV2K3E2QyzpjKZyq_wq-EfgU9l90U=
+#       OAUTH2_PROXY_CLIENT_ID: "{{oauth2_proxy_client_id}}"
+#       OAUTH2_PROXY_CLIENT_SECRET: "{{oauth2_proxy_client_secret}}"
+#       OAUTH2_PROXY_PROVIDER: google
+#       OAUTH2_PROXY_REDIRECT_URL: https://bastion.octoengine.com/oauth2/callback
+#       OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+#       OAUTH2_PROXY_COOKIE_DOMAINS: octoengine.com
+#       OAUTH2_PROXY_SESSION_STORE_TYPE: cookie
+#       OAUTH2_PROXY_COOKIE_SAMESITE: lax
+#       OAUTH2_PROXY_REVERSE_PROXY: "true"
+#       OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST: "true"
+#       OAUTH2_PROXY_COOKIE_CSRF_EXPIRE: 5m
+#       OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "false"
+#     restart_policy: 'unless-stopped'
+#     volumes:
+#       - /docker/oauth-proxy/permitted_users.txt:/etc/permitted_oauth_users.txt
+
+# # stop ansible after execution
+# - name: Stop ansible
+#   meta: end_play
+
+##################################
+#     Begin Bastion Specific    #
+##################################
+
+- name: Setup Default Packages
+  import_tasks: default_packages.yml
+
+# - name: Setup Users
+#   import_tasks: users.yml
+
+- name: Setup Security Settings
+  import_tasks: security.yml
+
+#   - name: Call a debug task
+#     ansible.builtin.debug:
+#       msg: "G'day"
+
+# --TEMP
+- name: Install Guacamole
+  import_tasks: guacamole.yml
+
+##################################
+#      Setup Bastion Specific    #
+##################################
+- name: Add Docker's official GPG key
+  apt_key:
+    url: https://download.docker.com/linux/raspbian/gpg
+    state: present
+
+- name: Add Docker's APT repository
+  apt_repository:
+    repo: deb [arch=armhf] https://download.docker.com/linux/raspbian bookworm stable
+    state: present
+
+- name: Update the APT package index
+  apt:
+    update_cache: yes
+
+- name: Install Docker
+  apt:
+    name: docker.io
+    state: present
+
+- name: Add user to Docker group
+  user:
+    name: "ddebruyn"
+    groups: docker
+    append: yes
+
+##################################
+#   Configure Additional Network #
+##################################
+# - name: Ensure /etc/network/interfaces.d/eth0 exists with correct configuration
+#   copy:
+#     dest: /etc/network/interfaces.d/eth0
+#     content: |
+#       auto eth0
+#       iface eth0 inet static
+#           address 10.212.212.20
+#           netmask 255.255.255.0
+#           gateway 10.212.212.1
+#           dns-nameservers 8.8.8.8 8.8.4.4
+
+- name: Ensure /etc/network/interfaces.d/vlans exists with correct configuration
+  copy:
+    dest: /etc/network/interfaces.d/vlans
+    content: |
+      auto eth0.100
+      iface eth0.100 inet manual
+          vlan-raw-device eth0
+
+      auto eth0.400
+      iface eth0.400 inet manual
+          vlan-raw-device eth0
+
+      auto eth0.952
+      iface eth0.952 inet manual
+          vlan-raw-device eth0
+
+# Ensure there is a block of text in the /etc/dhcpcd.conf file that matches the following:
+- name: Ensure /etc/dhcpcd.conf exists with correct configuration
+  blockinfile:
+    path: /etc/dhcpcd.conf
+    block: | 
+      allowinterfaces eth0 eth0.952 eth0.100 eth0.400
+
+      interface eth0
+      static ip_address=10.212.212.20/24
+      static routers=10.212.212.1
+      static domain_name_servers=8.8.8.8,8.8.4.4
+      #static domain_search=
+      static_routes=10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+
+
+      interface eth0.952
+      static ip_address=192.168.100.150/24
+      static routers=192.168.100.1
+      static domain_name_servers=8.8.8.8,8.8.4.4
+
+      interface eth0.100
+      static ip_address=10.10.10.40/24
+
+      interface eth0.400
+      static ip_address=10.211.211.40/26
+    create: no
+
+# Ensure dhcpcd is started and enabled
+- name: Ensure dhcpcd is started and enabled
+  ansible.builtin.service:
+    name: dhcpcd
+    state: started
+    enabled: yes
+
+
+
+
+# - name: Ensure /etc/network/interfaces.d/eth0.952 exists with correct configuration
+#   copy:
+#     dest: /etc/network/interfaces.d/eth0.952
+#     content: |
+#       auto eth0.952
+#       iface eth0.952 inet static
+#           vlan-raw-device eth0
+#           address 192.168.100.100
+#           netmask 255.255.255.0
+#           gateway 192.168.100.1
+#           dns-nameservers 8.8.8.8 8.8.4.4
+
+# - name: Ensure /etc/network/interfaces.d/eth0.100 exists with correct configuration
+#   copy:
+#     dest: /etc/network/interfaces.d/eth0.100
+#     content: |
+#       auto eth0.100
+#       iface eth0.100 inet manual
+#           vlan-raw-device eth0
+
+# - name: Ensure /etc/network/interfaces.d/eth0.400 exists with correct configuration
+#   copy:
+#     dest: /etc/network/interfaces.d/eth0.400
+#     content: |
+#       auto eth0.400
+#       iface eth0.400 inet manual
+#           vlan-raw-device eth0
+
+- name: Restart networking
+  ansible.builtin.systemd:
+    name: networking
+    state: restarted
+
+- name: Wait for eth0 to be up
+  shell: |
+    cat /sys/class/net/eth0/operstate
+  register: eth0_state
+  until: eth0_state.stdout.strip() == "up"
+  retries: 5
+  delay: 5
+
+- name: Wait for eth0.100 to be up
+  shell: |
+    cat /sys/class/net/eth0.100/operstate
+  register: eth0_100_state
+  until: eth0_100_state.stdout.strip() == "up"
+  retries: 5
+  delay: 5
+
+- name: Wait for eth0.400 to be up
+  shell: |
+    cat /sys/class/net/eth0.400/operstate
+  register: eth0_400_state
+  until: eth0_400_state.stdout.strip() == "up"
+  retries: 5
+  delay: 5
+
+- name: Wait for eth0.952 to be up
+  shell: |
+    cat /sys/class/net/eth0.952/operstate
+  register: eth0_952_state
+  until: eth0_952_state.stdout.strip() == "up"
+  retries: 5
+  delay: 5
+
+- name: Ensure iproute2 is installed
+  apt:
+    name: iproute2
+    state: present
+
+- name: Create routing table for eth0
+  lineinfile:
+    path: /etc/iproute2/rt_tables
+    line: "100 eth0"
+    create: yes
+
+- name: Create routing table for eth0.952
+  lineinfile:
+    path: /etc/iproute2/rt_tables
+    line: "101 eth0_952"
+    create: yes
+
+- name: Get current IP rules
+  command: ip rule list
+  register: ip_rules
+
+- name: Delete duplicate rules
+  shell: |
+    for rule in $(echo "{{ ip_rules.stdout_lines }}" | grep "to 192.168.0.0/16 lookup main" | tail -n +2); do
+      ip rule del to 192.168.0.0/16 lookup main;
+    done
+    for rule in $(echo "{{ ip_rules.stdout_lines }}" | grep "to 172.16.0.0/12 lookup main" | tail -n +2); do
+      ip rule del to 172.16.0.0/12 lookup main;
+    done
+    for rule in $(echo "{{ ip_rules.stdout_lines }}" | grep "to 10.0.0.0/8 lookup main" | tail -n +2); do
+      ip rule del to 10.0.0.0/8 lookup main;
+    done
+  when: ip_rules.stdout is defined
+
+
+# Add routing rules for RFC1918 addresses
+- name: Add routing rules for RFC1918 addresses
+  command: ip rule add from all to {{ item }} lookup main
+  loop:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+  when: ip_rules.stdout is defined and ip_rules.stdout.find(item) == -1
+
+# Add routing rule for external addresses via eth0
+- name: Add routing rule for external addresses via eth0
+  command: ip rule add from all lookup main priority 100
+  ignore_errors: yes
+
+# Add routing rule for external addresses via eth0.952 as fallback
+- name: Add routing rule for external addresses via eth0.952 as fallback
+  command: ip rule add from all lookup 101 priority 200
+  ignore_errors: yes
+
+# Ensure eth0.952 is up
+- name: Ensure eth0.952 is up
+  shell: |
+    ip link set eth0.952 up
+    ip addr add 192.168.100.150/24 dev eth0.952
+  when: eth0_952_state.stdout.strip() != "up"
+
+# Verify gateway for eth0.952
+- name: Verify gateway for eth0.952
+  shell: ping -c 4 192.168.100.1
+  register: ping_result
+  ignore_errors: yes
+
+# Add default route to eth0.952 table
+- name: Add default route to eth0.952 table
+  command: ip route add default via 192.168.100.1 dev eth0.952 table 101
+  when: ping_result.rc == 0
+  ignore_errors: yes
+
+# - name: Add default route to eth0 table
+#   command: ip route add default via 10.212.212.1 dev eth0 table eth0
+#   when: eth0_state.stdout.strip() == "up"
+
+# - name: Add default route to eth0.952 table
+#   command: ip route add default via 192.168.100.1 dev eth0.952 table eth0_952
+#   when: eth0_952_state.stdout.strip() == "up"
+
+# - name: Add RFC1918 routes to eth0 table
+#   command: ip route add {{ item }} dev eth0 table eth0
+#   loop:
+#     - 10.0.0.0/8
+#     - 172.16.0.0/12
+#     - 192.168.0.0/16
+
+# - name: Ensure eth0 is up
+#   wait_for:
+#     path: /sys/class/net/eth0/operstate
+#     state: started
+#     delay: 5
+#     timeout: 30
+
+# - name: Ensure eth0.952 is up
+#   wait_for:
+#     path: /sys/class/net/eth0.952/operstate
+#     state: started
+#     delay: 5
+#     timeout: 30
+
+# - name: Add routing rules for RFC1918 addresses
+#   command: ip rule add from all to {{ item }} lookup eth0
+#   loop:
+#     - 10.0.0.0/8
+#     - 172.16.0.0/12
+#     - 192.168.0.0/16
+
+# - name: Add routing rule for external addresses
+#   command: ip rule add from all lookup eth0_952 priority 1000
+#   when: eth0_state.stdout.strip() != "up"
+
+# - name: Add routing rule for eth0 as default
+#   command: ip rule add from all lookup eth0 priority 100
+#   when: eth0_state.stdout.strip() == "up"
+
+##################################
+#   Setup UPS Specific           #
+##################################
+# Ensure MONITOR servers@192.168.200.2 1 monuser BlackFrog master is in /etc/nut/upsmon.conf
+- name: Ensure /etc/nut/upsmon.conf exists with correct configuration
+  lineinfile:
+    path: /etc/nut/upsmon.conf
+    line: "MONITOR servers@192.168.200.2 1 monuser BlackFrog master"
+    create: no
+
+# Restart the NUT service
+- name: Restart the NUT service
+  ansible.builtin.service:
+    name: nut-client
+    state: restarted
+
+# Copy bastion.octoengine.com.conf to /docker/mapas-waf/nginx/sites/
+- name: Copy nginx
+  copy:
+    src: files/ups_monitor.py
+    dest: /root/ups_monitor.py
+
+# Create cronjob to run ups_monitor.py every 1 minutes
+- name: Create cronjob to run ups_monitor.py every 1 minutes
+  cron:
+    name: "UPS Monitor"
+    minute: "*/1"
+    job: "/usr/bin/python3 /root/ups_monitor.py"
+
+##################################
+#   Setup Watchtower Specific    #
+##################################
+- name: Ensure /root/.docker/config.json exists with correct configuration
+  copy:
+    dest: /root/.docker/config.json
+    content: |
+      {
+          "auths": {
+              "registry.mapas.world:5000": {
+                  "auth": "{{mapas_registry_auth}}"
+              }
+          }
+      }
+
+- name: "Launch Watchtower container"
+  docker_container:
+    name: watchtower
+    hostname: watchtower
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/config.json
+    restart_policy: 'unless-stopped'
+
+- name: Cronjob Daily Docker Cleanup"
+  cron:
+    name: Cronjob Daily Docker Cleanup
+    minute: "5"
+    hour: "10"
+    job: "docker system prune -a > /dev/null"
+
+- name: Install Guacamole
+  import_tasks: guacamole.yml

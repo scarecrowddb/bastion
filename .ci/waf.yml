@@ -1,0 +1,11 @@
+stages:
+  - build
+
+docker_waf:
+  stage: build
+  script:
+      - ls -lh
+      - docker buildx build --platform linux/arm64 -t $DOCKER_REGISTRY/oauth_waf:latest --load --pull --push -f docker/oauth_waf/Dockerfile .
+  only:
+    changes:
+      - docker/oauth_waf/**

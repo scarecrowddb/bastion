@@ -1,0 +1,37 @@
+stages:
+  - build
+
+build_guacamole_server_image:
+  stage: build
+  script:
+    - echo "Building the Docker image with buildx for multi-arch"
+    - echo "Cloning the repository from GitHub"
+    - git clone https://github.com/apache/guacamole-server.git
+    - ls -lh
+    - cd guacamole-server
+    - echo "Repository cloned successfully"
+    - docker buildx build --platform linux/arm64 -t $DOCKER_REGISTRY/guacamole-server:latest --pull --push -f Dockerfile .
+    - docker push $DOCKER_REGISTRY/guacamole-server:latest
+    - cd ..
+  only:
+    - schedules
+
+build_guacamole_client_image:
+  stage: build
+  dependencies:
+    - build_guacamole_server_image
+  script:
+    - echo "Building the Docker image with buildx for multi-arch"
+    - echo "Cloning the repository from GitHub"
+    - git clone https://github.com/apache/guacamole-client
+    - ls -lh
+    - cd guacamole-client
+    - echo "Repository cloned successfully"
+    - docker buildx build --platform linux/arm64 -t $DOCKER_REGISTRY/guacamole-client:latest --pull --push -f Dockerfile .
+    - docker push $DOCKER_REGISTRY/guacamole-client:latest
+  only:
+    - schedules
+
+
+
+
